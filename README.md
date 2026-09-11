@@ -1,50 +1,23 @@
 # Research Agent
 
-An LLM agent that combines internal-knowledge RAG, live web search, a calculator
-tool, and MCP-based file/Notion persistence, orchestrated with LangGraph.
+A CLI research agent built with LangGraph. It answers questions using an internal-docs RAG search, live web search, and a calculator, then saves the final report to disk (and optionally Notion) via MCP.
 
 ## Stack
-- **LLM**: Google Gemini (`ChatGoogleGenerativeAI`, e.g. `gemini-2.5-flash`) — free tier
-- **Orchestration**: LangGraph.js (`createReactAgent`)
-- **Web search tool**: Tavily API — free tier
-- **RAG**: local embeddings (`@xenova/transformers`, all-MiniLM-L6-v2, no API key)
-  + FAISS vector store (`faiss-node`)
-- **MCP**: official `@modelcontextprotocol/server-filesystem`, scoped to
-  `output/reports`, exposing `write_file` / `read_text_file` / `list_directory`
-  as agent tools
-- **MCP (optional)**: official `notion-mcp-server` (v3, consolidated
-  `notion_read` / `notion_write` / `notion_describe` tools), wrapped as a single
-  `notion_save_report` tool that calls the `create_page` operation with
-  markdown content. Only registered if `NOTION_TOKEN` + `NOTION_PARENT_PAGE_ID`
-  are set in `.env`.
 
-## Folder structure
-```
-research-agent/
-├── src/
-│   ├── index.js           CLI entry point (chat loop)
-│   ├── graph.js            LangGraph agent + system prompt + tool list
-│   ├── llm.js               Gemini client
-│   ├── config.js            env var loading
-│   ├── tools/
-│   │   ├── ragTool.js        search_internal_docs
-│   │   ├── webSearch.js      web_search (Tavily)
-│   │   ├── calculator.js     calculator
-│   │   ├── mcpTools.js       mcp_write_file / mcp_read_file / mcp_list_files
-│   │   └── notionTools.js    notion_save_report (optional)
-│   ├── rag/
-│   │   ├── embeddings.js     local embedding wrapper
-│   │   ├── vectorStore.js    load/save FAISS index
-│   │   └── ingest.js         builds the index from /docs
-│   └── mcp/
-│       ├── filesystemClient.js   MCP client -> filesystem server (stdio)
-│       └── notionClient.js       MCP client -> notion-mcp-server (stdio, optional)
-├── docs/                 put your fake/sample knowledge docs here (.md/.txt/.pdf)
-├── data/faiss_index/     generated FAISS index (gitignored)
-├── output/reports/       agent-saved reports land here via MCP (gitignored)
-├── .env.example
-└── package.json
-```
+- **LLM**: Ollama (local), currently `qwen2.5:7b`
+- **Orchestration**: LangGraph.js (`createReactAgent`)
+- **Web search**: Tavily API
+- **RAG**: local embeddings (`@xenova/transformers`) + FAISS vector store
+- **MCP tools**: `@modelcontextprotocol/server-filesystem` (save/read/list reports), and optionally `notion-mcp-server` for saving reports as Notion pages
+
+## Prerequisites
+
+- Node.js 20+
+- [Ollama](https://ollama.com) installed and running locally, with the model pulled:
+  ```
+  ollama pull qwen2.5:7b
+  ```
+- A free [Tavily](https://tavily.com) API key
 
 ## Setup
 
@@ -52,77 +25,54 @@ research-agent/
    ```
    npm install
    ```
-
-2. Copy `.env.example` to `.env` and fill in:
-   ```
-   GEMINI_API_KEY=...
-   TAVILY_API_KEY=...
-   ```
-   Get a free Gemini key at aistudio.google.com/apikey and a free Tavily key
-   at tavily.com.
-
-3. Add documents to `docs/` (markdown, txt, or PDF — you'll add your fake docs here).
-
-4. Build the RAG index:
+2. Copy `.env.example` to `.env` and fill in `TAVILY_API_KEY`.
+3. Add reference material to `docs/`, then build the RAG index:
    ```
    npm run ingest
    ```
-
-5. Run the agent:
+4. Start the agent:
    ```
    npm start
    ```
 
 ## Notion integration (optional)
 
-The agent can save a finished report straight to a Notion page via MCP, using
-the official `notion-mcp-server` (installed locally as a dependency; spawned
-on demand through `npx`, same pattern as the filesystem MCP server).
+To let the agent save reports straight to a Notion page:
 
-1. Create an integration at https://www.notion.so/profile/integrations
-   and copy its "Internal Integration Secret" (starts with `ntn_` or `secret_`).
-2. Open the Notion page you want reports saved under, click **"..." → Connections**,
-   and add your integration so it has access. This step is required — a valid
-   token alone is not enough, the target page must be explicitly shared.
-3. Copy that page's ID: it's the 32-character string in the page URL
-   (with or without dashes both work).
-4. Fill in `.env`:
+1. Create an integration at [notion.so/profile/integrations](https://www.notion.so/profile/integrations) and copy its secret.
+2. Share the target Notion page with that integration (page → "..." → Connections).
+3. Add to `.env`:
    ```
-   NOTION_TOKEN=your_notion_integration_token_here
-   NOTION_PARENT_PAGE_ID=your_notion_page_id_here
-   ```
-5. (Optional) inspect the exact tools/operations this MCP server exposes on
-   your machine:
-   ```
-   node src/mcp/notionClient.js
+   NOTION_TOKEN=...
+   NOTION_PARENT_PAGE_ID=...
    ```
 
-With both env vars set, `graph.js` automatically registers the `notion_save_report`
-tool and the agent will use it whenever you ask it to save/send a report to Notion.
-Leave them blank and the agent runs exactly as before, filesystem-only.
+Leave these blank and the agent runs filesystem-only.
 
 ## How it works
 
 1. You ask a question in the CLI.
-2. The LLM (via LangGraph's ReAct loop) decides which tool(s) to call:
-   - `search_internal_docs` for anything that might be in your internal docs (RAG/FAISS)
-   - `web_search` for current/external info (Tavily)
-   - `calculator` for any math
-3. Once it has enough information, it drafts an answer/report and calls
-   `mcp_write_file` (via the MCP filesystem server) to save it under
-   `output/reports/`, and `notion_save_report` too if Notion is configured
-   and the user asked for it.
-4. It replies in the chat and tells you the filename (and/or Notion page) it saved.
+2. The agent decides which tools to use: `search_internal_docs` (RAG), `web_search` (Tavily), and/or `calculator`.
+3. It drafts an answer and saves it as a markdown report via `mcp_write_file` under `output/reports/`, and to Notion via `notion_save_report` if configured and requested.
+4. It replies in the chat with the filename (and/or Notion link) it saved.
+
+## Project structure
+
+```
+src/
+├── index.js         CLI entry point
+├── graph.js         Agent, system prompt, tool registration
+├── llm.js           Ollama client
+├── config.js        Env var loading
+├── tools/           search_internal_docs, web_search, calculator, mcp_write_file, mcp_read_file, mcp_list_files, notion_save_report
+├── rag/             Embeddings, FAISS vector store, doc ingestion
+└── mcp/             MCP stdio clients for the filesystem and Notion servers
+```
 
 ## Debugging MCP
 
-To see exactly what tools/schemas the filesystem MCP server exposes on your
-machine:
+Check what tools each MCP server exposes on your machine:
 ```
 node src/mcp/filesystemClient.js
-```
-
-To do the same for the Notion MCP server (requires `NOTION_TOKEN` set):
-```
 node src/mcp/notionClient.js
 ```
