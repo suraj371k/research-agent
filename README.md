@@ -55,8 +55,18 @@ research-agent/
 
 2. Copy `.env.example` to `.env` and fill in:
    ```
-   GEMINI_API_KEY=...
-   TAVILY_API_KEY=...
+   
+TAVILY_API_KEY=
+
+DOCS_DIR=./docs
+FAISS_INDEX_DIR=./data/faiss_index
+REPORTS_DIR=./output/reports
+
+NOTION_TOKEN=
+NOTION_PARENT_PAGE_ID=
+
+
+
    ```
    Get a free Gemini key at aistudio.google.com/apikey and a free Tavily key
    at tavily.com.
