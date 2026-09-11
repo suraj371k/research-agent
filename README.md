@@ -4,7 +4,7 @@ An LLM agent that combines internal-knowledge RAG, live web search, a calculator
 tool, and MCP-based file/Notion persistence, orchestrated with LangGraph.
 
 ## Stack
-- **LLM**: Google Gemini (`ChatGoogleGenerativeAI`, e.g. `gemini-2.5-flash`) — free tier
+- **LLM**: Ollama with qwen2.5
 - **Orchestration**: LangGraph.js (`createReactAgent`)
 - **Web search tool**: Tavily API — free tier
 - **RAG**: local embeddings (`@xenova/transformers`, all-MiniLM-L6-v2, no API key)
